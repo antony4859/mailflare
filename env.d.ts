@@ -1,4 +1,8 @@
 interface CloudflareEnv {
+	HINDSIGHT_MCP_URL?: string;
+	HINDSIGHT_API_KEY?: string;
+	HINDSIGHT_ACCESS_CLIENT_ID?: string;
+	HINDSIGHT_ACCESS_CLIENT_SECRET?: string;
 	DB: D1Database;
 	EMAIL: SendEmail;
 	BUCKET: R2Bucket;

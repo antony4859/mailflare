@@ -5,6 +5,8 @@ export type MessageFolder = "inbox" | "starred" | "snoozed" | "sent" | "drafts" 
 export type MessageDirection = "inbound" | "outbound";
 
 export type Message = {
+	aiSummary?: string | null;
+	aiCategory?: string | null;
 	id: string;
 	userId: string;
 	mailboxId: string | null;

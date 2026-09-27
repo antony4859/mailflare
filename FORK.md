@@ -13,3 +13,15 @@ Build: npm ci --ignore-scripts, configure wrangler.jsonc from wrangler.jsonc.exa
 Verification: node --test tests/team-fork.test.mjs tests/backup-schema-coverage.test.mjs. Tests exercise the actual mailbox authorization and forwarding code against SQLite with all migrations, including private inbox isolation, delegated read/send permissions, revocation, disabled mailboxes, and forwarding loop prevention.
 
 Refresh the source archive before every build using npm run source:bundle. Deploy runs this automatically. Preserve this fork's changes when updating upstream. Do not use upstream's automatic update workflow to overwrite the fork.
+
+## Email assistant and shared Hindsight
+
+OpenCode Go is an explicit provider preset. API keys remain server-side; requests identify this app and include a stable session header. OpenCode describes Go as a coding-agent service, so email-automation eligibility must be verified with the provider.
+
+Hindsight connects over Streamable HTTP MCP to the existing zimo-workspace bank. Configure HINDSIGHT_MCP_URL, HINDSIGHT_API_KEY and, for Cloudflare Access, HINDSIGHT_ACCESS_CLIENT_ID and HINDSIGHT_ACCESS_CLIENT_SECRET as server settings/secrets. The client cannot choose a different bank or MCP server. Only recall and retain are exposed.
+
+All automatic reading, categorization, drafting and memory reads/writes are off by default per mailbox. Chat memory controls are per request and reset when switching mailbox. Email-action memory writes reset when the dialog closes. A memory read sends only a general company-context query; a write shares the generated summary or user-enabled chat fact with the shared company bank. Read and write switches are independent. Attachments are not automatically read. Drafts never send automatically.
+
+Apply 0044_zimo_email_assistant.sql before deploying. Existing messages are not backfilled. Automations apply to new eligible inbox mail and retain the existing per-mailbox daily cap, retries and queue leases. Automatic replies are not drafted for list/automated senders. Message summaries and category labels are stored with messages and included in database backups.
+
+Verify with node --test tests/email-analysis.test.mjs tests/hindsight.test.mjs tests/team-fork.test.mjs tests/backup-schema-coverage.test.mjs.

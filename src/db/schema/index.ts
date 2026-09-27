@@ -215,7 +215,9 @@ export const apiKeys = sqliteTable("api_keys", {
 export const messages = sqliteTable(
 	"messages",
 	{
-		id: text("id").primaryKey(),
+		aiSummary: text("ai_summary"),
+	aiCategory: text("ai_category"),
+	id: text("id").primaryKey(),
 		userId: text("user_id")
 			.notNull()
 			.references(() => users.id, { onDelete: "cascade" }),
@@ -579,7 +581,7 @@ export const appSettings = sqliteTable("app_settings", {
 	iconKey: text("icon_key"),
 	agentEnabled: integer("agent_enabled", { mode: "boolean" }).notNull().default(true),
 	agentProvider: text("agent_provider", { enum: ["cloudflare", "compatible"] }),
-	agentPreset: text("agent_preset", { enum: ["openai", "openrouter", "groq", "custom"] }),
+	agentPreset: text("agent_preset", { enum: ["openai", "openrouter", "groq", "opencode-go", "custom"] }),
 	agentBaseUrl: text("agent_base_url"),
 	agentApiKey: text("agent_api_key"),
 	agentModel: text("agent_model"),
@@ -636,6 +638,11 @@ export const mailboxAgentSettings = sqliteTable("mailbox_agent_settings", {
 	enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
 	modelId: text("model_id"),
 	autoDraftEnabled: integer("auto_draft_enabled", { mode: "boolean" }).notNull().default(false),
+	autoAnalyzeEnabled: integer("auto_analyze_enabled", { mode: "boolean" }).notNull().default(false),
+	autoClassifyEnabled: integer("auto_classify_enabled", { mode: "boolean" }).notNull().default(false),
+	autoMarkReadEnabled: integer("auto_mark_read_enabled", { mode: "boolean" }).notNull().default(false),
+	autoHindsightReadEnabled: integer("auto_hindsight_read_enabled", { mode: "boolean" }).notNull().default(false),
+	autoHindsightWriteEnabled: integer("auto_hindsight_write_enabled", { mode: "boolean" }).notNull().default(false),
 	reviewerUserId: text("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
 	instructions: text("instructions").notNull().default(""),
 	dailyLimit: integer("daily_limit").notNull().default(25),
@@ -672,6 +679,7 @@ export const agentChatMessages = sqliteTable("agent_chat_messages", {
 }, (t) => [index("agent_chat_messages_conversation_idx").on(t.conversationId, t.createdAt)]);
 
 export const agentJobs = sqliteTable("agent_jobs", {
+	draftAllowed: integer("draft_allowed", { mode: "boolean" }).notNull().default(true),
 	id: text("id").primaryKey(),
 	mailboxId: text("mailbox_id").notNull().references(() => mailboxes.id, { onDelete: "cascade" }),
 	sourceMessageId: text("source_message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),

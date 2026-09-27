@@ -5,13 +5,13 @@ import { agentJobs, agentSendApprovals, appSettings } from "@/db/schema";
 import { getEnv } from "@/lib/cloudflare";
 import { requireSessionUser } from "@/lib/api/auth";
 import { getAgentEnabled, getAgentProviderConfig, getAgentProviderPublicConfig, resolveAgentBaseUrl } from "@/lib/agent/provider";
-import { AGENT_SETTINGS_ID } from "@/lib/agent/provider-constants";
+import { AGENT_SETTINGS_ID, OPENCODE_CHAT_MODELS } from "@/lib/agent/provider-constants";
 import { parseAgentModelIds } from "@/lib/agent/model-ids";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 
 const providerSchema = z.object({
 	provider: z.enum(["cloudflare", "compatible"]),
-	preset: z.enum(["openai", "openrouter", "groq", "custom"]),
+	preset: z.enum(["openai", "openrouter", "groq", "opencode-go", "custom"]),
 	baseUrl: z.string().max(500),
 	apiKey: z.string().max(2_000).optional(),
 	model: z.string().trim().min(1).max(5_000),
@@ -39,7 +39,7 @@ export async function PUT(request: Request) {
 	if (!hasValidSessionMutationOrigin(request)) return Response.json({ error: "Invalid origin" }, { status: 403 });
 	const body = await request.json().catch(() => null);
 	const enabled = enabledSchema.safeParse(body);
-	if (enabled.success && Object.keys(body).length === 1) {
+	if (enabled.success && body && typeof body === "object" && Object.keys(body).length === 1) {
 		const db = getDb(access.env);
 		await db.insert(appSettings).values({ id: AGENT_SETTINGS_ID, agentEnabled: enabled.data.enabled }).onConflictDoUpdate({ target: appSettings.id, set: { agentEnabled: enabled.data.enabled, updatedAt: new Date() } });
 		if (!enabled.data.enabled) {
@@ -52,6 +52,7 @@ export async function PUT(request: Request) {
 	if (!parsed.success) return Response.json({ error: "Invalid provider settings" }, { status: 400 });
 	const input = parsed.data;
 	const modelIds = parseAgentModelIds(input.model);
+	if (input.preset === "opencode-go" && modelIds.some(id => !OPENCODE_CHAT_MODELS.includes(id))) return Response.json({ error: "Choose an OpenCode Go Chat Completions model supported by this client" }, { status: 400 });
 	if (modelIds.length === 0 || modelIds.length > 20 || modelIds.some((model) => model.length > 200)) return Response.json({ error: "Choose 1 to 20 valid model IDs" }, { status: 400 });
 	if (input.provider === "cloudflare" && !access.env.AI) return Response.json({ error: "Cloudflare Workers AI binding is unavailable" }, { status: 400 });
 	let baseUrl: string | null = null;

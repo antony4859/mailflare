@@ -1,3 +1,4 @@
+import { hindsightConfigured } from "@/lib/agent/hindsight";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
@@ -8,7 +9,7 @@ import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { getAgentProviderPublicConfig } from "@/lib/agent/provider";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 
-const schema = z.object({ mailboxId: z.string().min(1), enabled: z.boolean(), modelId: z.string().max(200).nullable().optional(), autoDraftEnabled: z.boolean(), reviewerUserId: z.string().nullable().optional(), instructions: z.string().max(4_000), dailyLimit: z.number().int().min(1).max(100) });
+const schema = z.object({ autoAnalyzeEnabled: z.boolean().default(false), autoClassifyEnabled: z.boolean().default(false), autoMarkReadEnabled: z.boolean().default(false), autoHindsightReadEnabled: z.boolean().default(false), autoHindsightWriteEnabled: z.boolean().default(false),  mailboxId: z.string().min(1), enabled: z.boolean(), modelId: z.string().max(200).nullable().optional(), autoDraftEnabled: z.boolean(), reviewerUserId: z.string().nullable().optional(), instructions: z.string().max(4_000), dailyLimit: z.number().int().min(1).max(100) });
 
 export async function GET(request: Request) {
 	const env = getEnv();
@@ -28,7 +29,7 @@ export async function GET(request: Request) {
 	const agentProvider = await getAgentProviderPublicConfig(env);
 	const provider = agentProvider.configured ? { kind: agentProvider.provider === "cloudflare" ? "Cloudflare Workers AI" : agentProvider.preset === "custom" ? "OpenAI-compatible API" : agentProvider.preset, model: agentProvider.model } : null;
 	const modelId = settings?.modelId && agentProvider.models.includes(settings.modelId) ? settings.modelId : agentProvider.models[0] ?? null;
-	return Response.json({ settings: settings ? { ...settings, enabled: true, modelId } : { mailboxId, enabled: true, modelId, autoDraftEnabled: false, reviewerUserId: access.mailbox.userId, instructions: "", dailyLimit: 25 }, models: agentProvider.models, canManage: access.canManage, canConfigureProvider: user.role === "admin", providerConfigured: agentProvider.configured, provider, autoReplyEnabled: access.mailbox.autoReplyEnabled, reviewers });
+	return Response.json({ hindsightConfigured: hindsightConfigured(env), settings: settings ? { ...settings, enabled: true, modelId } : { mailboxId, enabled: true, modelId, autoDraftEnabled: false, autoAnalyzeEnabled: false, autoClassifyEnabled: false, autoMarkReadEnabled: false, autoHindsightReadEnabled: false, autoHindsightWriteEnabled: false, reviewerUserId: access.mailbox.userId, instructions: "", dailyLimit: 25 }, models: agentProvider.models, canManage: access.canManage, canConfigureProvider: user.role === "admin", providerConfigured: agentProvider.configured, provider, autoReplyEnabled: access.mailbox.autoReplyEnabled, reviewers });
 }
 
 export async function PUT(request: Request) {
@@ -44,11 +45,13 @@ export async function PUT(request: Request) {
 	const reviewerId = parsed.data.reviewerUserId || access.mailbox.userId;
 	const [reviewer] = await db.select().from(users).where(eq(users.id, reviewerId)).limit(1);
 	if (!reviewer || reviewer.disabled || !(await getMailboxAccessLevel(db, reviewer, parsed.data.mailboxId))?.canSendOnBehalf) return Response.json({ error: "Reviewer needs mailbox send permission" }, { status: 400 });
+	if ((parsed.data.autoClassifyEnabled || parsed.data.autoMarkReadEnabled || parsed.data.autoHindsightWriteEnabled) && !(await getMailboxAccessLevel(db, reviewer, parsed.data.mailboxId))?.canManage) return Response.json({ error: "Choose a reviewer with full mailbox access for categorization, marking read, or memory writes" }, { status: 400 });
+	if ((parsed.data.autoHindsightReadEnabled || parsed.data.autoHindsightWriteEnabled) && !hindsightConfigured(env)) return Response.json({ error: "Connect Hindsight before enabling memory automations" }, { status: 400 });
 	if (parsed.data.autoDraftEnabled && access.mailbox.autoReplyEnabled) return Response.json({ error: "Disable the out-of-office auto-reply before enabling AI drafts" }, { status: 400 });
 	const agentProvider = await getAgentProviderPublicConfig(env);
 	if (parsed.data.modelId && !agentProvider.models.includes(parsed.data.modelId)) return Response.json({ error: "Choose a configured model" }, { status: 400 });
 	const modelId = parsed.data.modelId || agentProvider.models[0] || null;
-	await db.insert(mailboxAgentSettings).values({ ...parsed.data, enabled: true, modelId, reviewerUserId: reviewerId }).onConflictDoUpdate({ target: mailboxAgentSettings.mailboxId, set: { enabled: true, modelId, autoDraftEnabled: parsed.data.autoDraftEnabled, reviewerUserId: reviewerId, instructions: parsed.data.instructions, dailyLimit: parsed.data.dailyLimit, updatedAt: new Date() } });
-	if (!parsed.data.autoDraftEnabled) await db.update(agentJobs).set({ status: "skipped", reason: "Auto-drafting disabled" }).where(and(eq(agentJobs.mailboxId, parsed.data.mailboxId), eq(agentJobs.status, "pending")));
+	await db.insert(mailboxAgentSettings).values({ ...parsed.data, enabled: true, modelId, reviewerUserId: reviewerId }).onConflictDoUpdate({ target: mailboxAgentSettings.mailboxId, set: { enabled: true, modelId, autoDraftEnabled: parsed.data.autoDraftEnabled, autoAnalyzeEnabled: parsed.data.autoAnalyzeEnabled, autoClassifyEnabled: parsed.data.autoClassifyEnabled, autoMarkReadEnabled: parsed.data.autoMarkReadEnabled, autoHindsightReadEnabled: parsed.data.autoHindsightReadEnabled, autoHindsightWriteEnabled: parsed.data.autoHindsightWriteEnabled, reviewerUserId: reviewerId, instructions: parsed.data.instructions, dailyLimit: parsed.data.dailyLimit, updatedAt: new Date() } });
+	if (!parsed.data.autoDraftEnabled && !parsed.data.autoAnalyzeEnabled && !parsed.data.autoClassifyEnabled) await db.update(agentJobs).set({ status: "skipped", reason: "Auto-drafting disabled" }).where(and(eq(agentJobs.mailboxId, parsed.data.mailboxId), eq(agentJobs.status, "pending")));
 	return Response.json({ ok: true });
 }

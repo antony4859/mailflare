@@ -1,5 +1,5 @@
 export type AgentProviderKind = "cloudflare" | "compatible";
-export type AgentProviderPreset = "openai" | "openrouter" | "groq" | "custom";
+export type AgentProviderPreset = "openai" | "openrouter" | "groq" | "opencode-go" | "custom";
 export type AgentModelRates = { input: number | null; output: number | null };
 
 export type AgentProviderConfig = {

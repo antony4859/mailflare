@@ -23,6 +23,9 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 	const { selectedMailbox } = useSelectedMailbox();
 	const pathname = usePathname();
 	const { openDraftComposer } = useCompose();
+	const [memoryRead, setMemoryRead] = useState(false);
+	const [memoryWrite, setMemoryWrite] = useState(false);
+	const [hindsightConnected, setHindsightConnected] = useState(false);
 	const [view, setView] = useState<AgentPanelView>("chat");
 	const [settings, setSettings] = useState<AgentSettings | null>(null);
 	const [availableModels, setAvailableModels] = useState<string[]>([]);
@@ -78,6 +81,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 		if (settingsResponse.ok) {
 			const data = await settingsResponse.json() as AgentSettingsResponse;
 			setSettings(data.settings);
+			setHindsightConnected(data.hindsightConfigured);
 			setAvailableModels(data.models ?? []);
 			setCanManage(data.canManage);
 			setProviderConfigured(data.providerConfigured);
@@ -102,6 +106,8 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 		setConversationId(null);
 		setMessages([]);
 		setSettings(null);
+		setMemoryRead(false);
+		setMemoryWrite(false);
 		setView("chat");
 		if (menuRef.current) menuRef.current.open = false;
 		setError(null);
@@ -230,7 +236,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 		setError(null);
 		setMessages((current) => [...current, { id: userMessageId, role: "user", content: text, createdAt: new Date(startedAt).toISOString() }, { id: assistantMessageId, role: "assistant", content: "", pending: true }]);
 		try {
-			const response = await authFetch("/api/agent/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mailboxId, ...(selectedConversationRef.current ? { conversationId: selectedConversationRef.current } : {}), text, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }), signal: controller.signal });
+			const response = await authFetch("/api/agent/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mailboxId, memoryRead, memoryWrite, ...(selectedConversationRef.current ? { conversationId: selectedConversationRef.current } : {}), text, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }), signal: controller.signal });
 			if (!response.ok) throw new Error(((await response.json()) as AgentErrorResponse).error || "Assistant unavailable");
 			accepted = true;
 			const responseConversationId = response.headers.get("X-Conversation-Id");
@@ -347,6 +353,11 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 		</header>
 		{error && <p role="alert" className="mx-4 mt-3 break-words rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 		{view === "chat" && <>
+			<div className="flex flex-wrap gap-3 border-b px-4 py-2 text-xs">
+				<label className="flex items-center gap-2"><input type="checkbox" checked={memoryRead} disabled={!hindsightConnected || busy} onChange={event => setMemoryRead(event.target.checked)} />Read shared Hindsight</label>
+				<label className="flex items-center gap-2"><input type="checkbox" checked={memoryWrite} disabled={!hindsightConnected || !canManage || busy} onChange={event => setMemoryWrite(event.target.checked)} />Allow writing to shared brain</label>
+				{!hindsightConnected && <span>Hindsight not connected</span>}
+			</div>
 			<div ref={chatScrollRef} onScroll={(event) => { stickToBottomRef.current = isAgentScrollAtBottom(event.currentTarget); }} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 text-sm sm:px-5">
 				<div className="mx-auto max-w-3xl space-y-5">
 					{settings && !providerConfigured && <p className="rounded-2xl border border-amber-100 bg-amber-50 p-3 text-amber-800">Configure an AI provider to use chat and auto-drafts.</p>}
@@ -367,12 +378,18 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 		{view === "settings" && <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 text-sm">
 			{!canManage && <p>Mailbox management permission is required to change these settings.</p>}
 			{settings && <>
+				<p className="text-sm text-neutral-500">Automations run only for this mailbox when enabled. Drafts require review before sending.</p>
+				<label className="flex items-center justify-between gap-3"><span>Automatically read and summarize new mail</span><Switch checked={settings.autoAnalyzeEnabled ?? false} disabled={!canManage} onCheckedChange={(checked) => setSettings({ ...settings, autoAnalyzeEnabled: checked })} /></label>
+				<label className="flex items-center justify-between gap-3"><span>Automatically categorize new mail</span><Switch checked={settings.autoClassifyEnabled ?? false} disabled={!canManage} onCheckedChange={(checked) => setSettings({ ...settings, autoClassifyEnabled: checked })} /></label>
+				<label className="flex items-center justify-between gap-3"><span>Mark processed emails as read</span><Switch checked={settings.autoMarkReadEnabled ?? false} disabled={!canManage} onCheckedChange={(checked) => setSettings({ ...settings, autoMarkReadEnabled: checked })} /></label>
+				<label className="flex items-center justify-between gap-3"><span>Automations: read shared company context</span><Switch checked={settings.autoHindsightReadEnabled ?? false} disabled={!canManage || !hindsightConnected} onCheckedChange={(checked) => setSettings({ ...settings, autoHindsightReadEnabled: checked })} /></label>
+				<label className="flex items-center justify-between gap-3"><span>Automations: share summaries with company brain</span><Switch checked={settings.autoHindsightWriteEnabled ?? false} disabled={!canManage || !hindsightConnected} onCheckedChange={(checked) => setSettings({ ...settings, autoHindsightWriteEnabled: checked })} /></label>
 				<label className="block">Draft reviewer<select className="mt-2 w-full rounded-xl border border-neutral-200 bg-white p-2 outline-none focus:border-blue-400" value={settings.reviewerUserId ?? ""} disabled={!canManage} onChange={(event) => setSettings({ ...settings, reviewerUserId: event.target.value })}>{reviewers.map((reviewer) => <option key={reviewer.id} value={reviewer.id}>{reviewer.name} ({reviewer.email})</option>)}</select></label>
 				<label className="block">Model<select className="mt-2 w-full rounded-xl border border-neutral-200 bg-white p-2 outline-none focus:border-blue-400" value={settings.modelId ?? ""} disabled={!canManage || !availableModels.length} onChange={(event) => setSettings({ ...settings, modelId: event.target.value })}>{!availableModels.length && <option value="">No models configured</option>}{availableModels.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
 				<div className="flex items-center justify-between gap-3"><span>Automatically draft replies</span><Switch checked={settings.autoDraftEnabled} disabled={!canManage || autoReplyEnabled} onCheckedChange={(checked) => setSettings({ ...settings, autoDraftEnabled: checked })} aria-label="Automatically draft replies" /></div>
 				{autoReplyEnabled && <p className="text-amber-700">Disable out-of-office auto-replies to enable AI drafts.</p>}
 				<label className="block">Writing instructions<textarea className="mt-2 min-h-32 w-full rounded-xl border border-neutral-200 p-2 outline-none focus:border-blue-400" value={settings.instructions} disabled={!canManage} onChange={(event) => setSettings({ ...settings, instructions: event.target.value })} /></label>
-				<label className="block">Daily auto-draft limit<input className="mt-2 w-full rounded-xl border border-neutral-200 p-2 outline-none focus:border-blue-400" type="number" min="1" max="100" value={settings.dailyLimit} disabled={!canManage} onChange={(event) => setSettings({ ...settings, dailyLimit: Number(event.target.value) })} /></label>
+				<label className="block">Daily automation limit<input className="mt-2 w-full rounded-xl border border-neutral-200 p-2 outline-none focus:border-blue-400" type="number" min="1" max="100" value={settings.dailyLimit} disabled={!canManage} onChange={(event) => setSettings({ ...settings, dailyLimit: Number(event.target.value) })} /></label>
 				<Button type="button" size="sm" disabled={!canManage || busy} onClick={() => void saveSettings()}>Save settings</Button>
 			</>}
 			<p className="text-xs text-neutral-500">Selected email and thread content is sent to the configured AI provider when you use chat or auto-drafts. Drafts always need your confirmation before sending.</p>

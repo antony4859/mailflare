@@ -1,0 +1,63 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
+import { readFile,readdir,rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { build } from 'esbuild';
+
+test('email analysis respects access, memory opt-in and automation cancellation',async()=>{
+ const output=join(process.cwd(),'node_modules/.mailflare-analysis-test.mjs');
+ const sqlite=new DatabaseSync(':memory:');
+ const originalFetch=globalThis.fetch;
+ const calls=[];
+ try {
+  await build({stdin:{contents:`export {createDb} from './src/db'; export {analyzeEmail} from './src/lib/agent/analyze'; export {scheduleAutoDraft,processAgentDraftJob} from './src/lib/agent/jobs/utils';`,resolveDir:process.cwd()},outfile:output,bundle:true,platform:'node',format:'esm',packages:'external',plugins:[{name:'model-fixture',setup(build){
+   build.onResolve({filter:/^ai$/},()=>({path:'ai',namespace:'fixture'}));
+   build.onResolve({filter:/^\.\/model$/},()=>({path:'model',namespace:'fixture'}));
+   build.onResolve({filter:/^\.\/tools$/},()=>({path:'tools',namespace:'fixture'}));
+   build.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:args.path==='ai'?`export async function generateText(input){ await globalThis.analysisHook?.(input); return {text:JSON.stringify({summary:'Meeting on Friday',category:'meetings',draft:''}),usage:{inputTokens:1,outputTokens:1}}; }`:args.path==='model'?`export async function getAgentModel(){return {model:{},provider:'test',modelId:'test'};}`:`export async function runEmailTool(){throw new Error('Drafts must not run without opt-in');}`}));
+  }}]});
+  const {analyzeEmail,scheduleAutoDraft,processAgentDraftJob}=await import(pathToFileURL(output).href);
+  for(const file of (await readdir('drizzle/migrations')).filter(x=>x.endsWith('.sql')).sort()) sqlite.exec(await readFile(join('drizzle/migrations',file),'utf8'));
+  sqlite.exec(`INSERT INTO users(id,email,password_hash,name,created_at) VALUES ('owner','owner@example.com','x','Owner',1),('other','other@example.com','x','Other',1);
+   INSERT INTO domains(id,user_id,hostname,zone_id,created_at) VALUES ('d','owner','example.com','z',1);
+   INSERT INTO mailboxes(id,user_id,domain_id,local_part,created_at) VALUES ('m','owner','d','owner',1);
+   INSERT INTO messages(id,user_id,mailbox_id,direction,from_addr,to_addr,subject,text_body,status,created_at) VALUES ('email','owner','m','inbound','sender@example.com','owner@example.com','PRIVATE SUBJECT','PRIVATE CONTENT','received',1);`);
+  const DB={prepare(sql){let params=[];return {bind(...p){params=p;return this;},async raw(){const stmt=sqlite.prepare(sql);stmt.setReturnArrays(true);return stmt.all(...params);},async all(){return {results:sqlite.prepare(sql).all(...params)};},async run(){return sqlite.prepare(sql).run(...params);}};}};
+  const env={DB,HINDSIGHT_MCP_URL:'https://memory.example.com/mcp',HINDSIGHT_API_KEY:'fixture'};
+  const context={env,mailboxId:'m',user:{id:'owner',role:'admin'},origin:'chat'};
+  const options={classify:true,draft:false,memoryRead:false,memoryWrite:false,markRead:false};
+  globalThis.fetch=async(url,options)=>{const body=JSON.parse(options.body);calls.push(body);return new Response(JSON.stringify({id:body.id,result:{content:[{type:'text',text:'Shared context'}]}}),{headers:{'Content-Type':'application/json'}});};
+  let generations=0;globalThis.analysisHook=()=>{generations++;};
+  await assert.rejects(()=>analyzeEmail({...context,user:{id:'other',role:'user'}},'email',options),/permission denied/);
+  assert.equal(generations,0);
+  await analyzeEmail(context,'email',options);
+  assert.equal(calls.length,0,'no Hindsight request without opt-in');
+  assert.equal(sqlite.prepare("SELECT ai_category FROM messages WHERE id='email'").get().ai_category,'meetings');
+  await analyzeEmail(context,'email',{...options,memoryRead:true});
+  assert.equal(calls.filter(x=>x.method==='tools/call').length,1);
+  assert.equal(calls.at(-1).params.name,'recall');
+  assert.ok(!JSON.stringify(calls).includes('PRIVATE'),'read-only memory lookup does not send email content');
+  calls.length=0;
+  await analyzeEmail(context,'email',{...options,memoryWrite:true});
+  assert.equal(calls.at(-1).params.name,'retain');
+  assert.equal(calls.at(-1).params.arguments.content,'Meeting on Friday');
+  assert.equal(calls.at(-1).params.arguments.document_id,'mailflare-email');
+  const queue=[];env.AGENT_QUEUE={send:async message=>queue.push(message)};
+  const incoming={mailboxId:'m',sourceMessageId:'email',ownerUserId:'owner',sender:'no-reply@example.net',status:'received',folderId:null};
+  await scheduleAutoDraft(env,incoming);
+  assert.equal(queue.length,0,'automatic reading is off by default');
+  sqlite.exec("INSERT INTO mailbox_agent_settings(mailbox_id,auto_analyze_enabled,auto_draft_enabled,updated_at) VALUES ('m',1,1,1)");
+  await scheduleAutoDraft(env,incoming);
+  assert.equal(queue.length,1);
+  assert.equal(sqlite.prepare('SELECT draft_allowed FROM agent_jobs').get().draft_allowed,0,'do not draft replies to automated senders');
+  await processAgentDraftJob(env,queue[0].jobId);
+  assert.equal(sqlite.prepare('SELECT status FROM agent_jobs').get().status,'completed');
+  sqlite.exec("UPDATE mailbox_agent_settings SET auto_draft_enabled=0 WHERE mailbox_id='m'");
+  globalThis.analysisHook=()=>sqlite.exec("UPDATE mailbox_agent_settings SET auto_analyze_enabled=0 WHERE mailbox_id='m'");
+  calls.length=0;
+  await assert.rejects(()=>analyzeEmail({...context,origin:'auto'},'email',{...options,memoryWrite:true}),/disabled/);
+  assert.equal(calls.length,0);
+ }finally{globalThis.fetch=originalFetch;delete globalThis.analysisHook;sqlite.close();await rm(output,{force:true});}
+});
