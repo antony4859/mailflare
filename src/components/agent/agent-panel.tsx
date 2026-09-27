@@ -4,12 +4,13 @@ import "./style.scss"
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { ArrowLeft, FileText, ListChecks, Maximize2, Minimize2, Pause, PauseCircle, PenLine, Plus, Send, Settings2, Sparkles, Square, Trash2, X } from "lucide-react";
+import { ArrowLeft, FileText, ListChecks, Maximize2, Minimize2, Pause, PauseCircle, PenLine, Plus, Send, Settings2, Sparkles, Square, Tag, Trash2, X } from "lucide-react";
 import { authFetch } from "@/lib/auth/client";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { useCompose } from "@/components/compose/compose-context";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
+import { attachedEmailId } from "./email-context";
+import { AutomationSetup } from "./automation-setup";
 import { AgentTurnView } from "./agent-turn";
 import { ConversationSkeleton } from "./conversation-skeleton";
 import { QueuedAgentMessages } from "./queued-messages";
@@ -19,7 +20,7 @@ import { approveAgentAction, requestDraftReview } from "./client-actions";
 import type { AgentConversation, AgentConversationsResponse, AgentErrorResponse, AgentEvent, AgentHistoryResponse, AgentJob, AgentJobsResponse, AgentMessage, AgentPanelProps, AgentPanelView, AgentSettings, AgentSettingsResponse, QueuedAgentMessage } from "./types";
 import { appendAgentReasoning, consumeAgentStream, editQueuedAgentMessage, enqueueAgentMessage, groupAgentMessages, isAgentScrollAtBottom, markAgentDraftSent, normalizeAgentHistory, readAgentConversationId, removeQueuedAgentMessage, resizeAgentInput, saveAgentConversationId, shouldSubmitAgentInput, steerQueuedAgentMessage, uniqueAgentDraftActions } from "./utils";
 
-export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentPanelProps) {
+export function AgentPanel({ attachedEmail, onDetachEmail, open, fullSize, onClose, onToggleFullSize }: AgentPanelProps) {
 	const { selectedMailbox } = useSelectedMailbox();
 	const pathname = usePathname();
 	const { openDraftComposer } = useCompose();
@@ -55,11 +56,13 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 	const stickToBottomRef = useRef(true);
 	const selectedConversationRef = useRef<string | null>(null);
 	const mailboxId = selectedMailbox?.id;
-	const selectedMessageId = pathname.match(/^\/(?:inbox|sent|archived|spam|trash|starred|snoozed|folders\/[^/]+)\/([^/]+)/)?.[1] ?? null;
+	const emailContext = attachedEmail?.mailboxId === mailboxId ? attachedEmail : null;
+	const selectedMessageId = emailContext?.emailId ?? pathname.match(/^\/(?:inbox|sent|archived|spam|trash|starred|snoozed|folders\/[^/]+)\/([^/]+)/)?.[1] ?? null;
 	const welcomePrompts = selectedMessageId ? [
-		{ label: "Summarize this email", detail: "Get the key points", prompt: `Read the thread containing email ${selectedMessageId} and summarize its key points.`, icon: FileText },
-		{ label: "Suggest a reply", detail: "Create a draft for review", prompt: `Read the thread containing email ${selectedMessageId} and draft a reply.`, icon: PenLine },
-		{ label: "List action items", detail: "Find next steps in this email", prompt: `Read the thread containing email ${selectedMessageId} and list the action items.`, icon: ListChecks },
+		{ label: "Summarize this email", detail: "Get the key points", prompt: emailContext ? "Summarize this email." : `Read the thread containing email ${selectedMessageId} and summarize its key points.`, icon: FileText },
+		{ label: "Suggest a reply", detail: "Create a draft for review", prompt: emailContext ? "Draft a reply to this email for my review." : `Read the thread containing email ${selectedMessageId} and draft a reply.`, icon: PenLine },
+		{ label: "List action items", detail: "Find next steps in this email", prompt: emailContext ? "Find action items in this email." : `Read the thread containing email ${selectedMessageId} and list the action items.`, icon: ListChecks },
+		...(canManage ? [{ label: "Categorize this email", detail: "Save a useful category", prompt: emailContext ? "Categorize this email." : `Categorize email ${selectedMessageId}.`, icon: Tag }] : []),
 	] : [
 		{ label: "Summarize recent mail", detail: "Catch up on your inbox", prompt: "Summarize my recent email in this mailbox.", icon: FileText },
 		{ label: "Suggest a reply", detail: "Create a draft for review", prompt: "Read my latest email and draft a reply.", icon: PenLine },
@@ -129,6 +132,26 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 	}, [mailboxId, open, refresh]);
 
 	useEffect(() => {
+		if (!open || !emailContext) return;
+		abort.current?.abort();
+		abort.current = null;
+		runningRef.current = false;
+		queueGenerationRef.current += 1;
+		queuedMessagesRef.current = [];
+		setQueuedMessages([]);
+		setBusy(false);
+		selectedConversationRef.current = null;
+		if (mailboxId) saveAgentConversationId(mailboxId, null);
+		setConversationId(null);
+		setMessages([]);
+		setLoadingConversation(false);
+		setMemoryRead(false);
+		setMemoryWrite(false);
+		setInput("");
+		setView("chat");
+	}, [emailContext, mailboxId, open]);
+
+	useEffect(() => {
 		const closeMenu = (event: PointerEvent) => {
 			if (menuRef.current && !menuRef.current.contains(event.target as Node)) menuRef.current.open = false;
 		};
@@ -159,10 +182,10 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 	}, [mailboxId, open, refresh]);
 
 	useEffect(() => {
-		if (!open) return;
+		if (!open || view === "settings") return;
 		const timer = window.setInterval(() => void refresh(), 30_000);
 		return () => window.clearInterval(timer);
-	}, [open, refresh]);
+	}, [open, refresh, view]);
 
 	async function selectConversation(id: string) {
 		if (!mailboxId) return;
@@ -236,7 +259,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 		setError(null);
 		setMessages((current) => [...current, { id: userMessageId, role: "user", content: text, createdAt: new Date(startedAt).toISOString() }, { id: assistantMessageId, role: "assistant", content: "", pending: true }]);
 		try {
-			const response = await authFetch("/api/agent/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mailboxId, memoryRead, memoryWrite, ...(selectedConversationRef.current ? { conversationId: selectedConversationRef.current } : {}), text, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }), signal: controller.signal });
+			const response = await authFetch("/api/agent/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mailboxId, emailId: queued ? queued.emailId : attachedEmailId(emailContext, mailboxId), memoryRead, memoryWrite, ...(selectedConversationRef.current ? { conversationId: selectedConversationRef.current } : {}), text, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }), signal: controller.signal });
 			if (!response.ok) throw new Error(((await response.json()) as AgentErrorResponse).error || "Assistant unavailable");
 			accepted = true;
 			const responseConversationId = response.headers.get("X-Conversation-Id");
@@ -288,7 +311,7 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 		if (!mailboxId || !text.trim() || !settings || !providerConfigured || loadingConversation) return;
 		setInput("");
 		if (runningRef.current || queuedMessagesRef.current.length) {
-			queuedMessagesRef.current = enqueueAgentMessage(queuedMessagesRef.current, text);
+			queuedMessagesRef.current = enqueueAgentMessage(queuedMessagesRef.current, text).map((item, index, all) => index === all.length - 1 ? { ...item, emailId: attachedEmailId(emailContext, mailboxId) } : item);
 			setQueuedMessages(queuedMessagesRef.current);
 			if (!runningRef.current) {
 				const [next, ...remaining] = queuedMessagesRef.current;
@@ -309,7 +332,8 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 			const response = await authFetch("/api/agent/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
 			if (!response.ok) throw new Error(((await response.json()) as AgentErrorResponse).error || "Could not save settings");
 			await refresh();
-		} catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save settings"); }
+			return true;
+		} catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save settings"); return false; }
 		finally { setBusy(false); }
 	}
 
@@ -353,16 +377,21 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 		</header>
 		{error && <p role="alert" className="mx-4 mt-3 break-words rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 		{view === "chat" && <>
-			<div className="flex flex-wrap gap-3 border-b px-4 py-2 text-xs">
-				<label className="flex items-center gap-2"><input type="checkbox" checked={memoryRead} disabled={!hindsightConnected || busy} onChange={event => setMemoryRead(event.target.checked)} />Read shared Hindsight</label>
-				<label className="flex items-center gap-2"><input type="checkbox" checked={memoryWrite} disabled={!hindsightConnected || !canManage || busy} onChange={event => setMemoryWrite(event.target.checked)} />Allow writing to shared brain</label>
-				{!hindsightConnected && <span>Hindsight not connected</span>}
+			<div className="space-y-2 border-b border-neutral-100 px-4 py-3 text-xs">
+				{emailContext && <div className="flex items-center gap-2 rounded-xl bg-blue-50 px-3 py-2 text-blue-900"><FileText size={15} className="shrink-0" /><span className="min-w-0 flex-1 truncate" title={emailContext.subject}>{emailContext.subject}</span><button type="button" onClick={onDetachEmail} aria-label="Remove attached email"><X size={14} /></button></div>}
+				<div className="flex items-center justify-between gap-2"><span className="text-neutral-500">{memoryWrite ? "Shared-memory saving is on" : "Nothing saved to shared memory"}</span><button type="button" className="text-blue-700" onClick={() => setView("settings")}>Automations</button></div>
+				<details><summary className="cursor-pointer text-neutral-600">Memory options</summary><div className="mt-2 space-y-2 rounded-xl bg-neutral-50 p-3">
+					<label className="flex items-center gap-2"><input type="checkbox" checked={memoryRead} disabled={!hindsightConnected || busy} onChange={event => setMemoryRead(event.target.checked)} />Use shared company context</label>
+					<label className="flex items-center gap-2"><input type="checkbox" checked={memoryWrite} disabled={!hindsightConnected || !canManage || busy} onChange={event => setMemoryWrite(event.target.checked)} />Allow saving to the shared brain</label>
+					{memoryWrite && <p className="text-amber-800">Facts saved from this chat can be read by your team.</p>}
+					{!hindsightConnected && <p className="text-neutral-500">Hindsight connection pending.</p>}
+				</div></details>
 			</div>
 			<div ref={chatScrollRef} onScroll={(event) => { stickToBottomRef.current = isAgentScrollAtBottom(event.currentTarget); }} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 text-sm sm:px-5">
 				<div className="mx-auto max-w-3xl space-y-5">
 					{settings && !providerConfigured && <p className="rounded-2xl border border-amber-100 bg-amber-50 p-3 text-amber-800">Configure an AI provider to use chat and auto-drafts.</p>}
 					{loadingConversation && <ConversationSkeleton />}
-					{!loadingConversation && messages.length === 0 && settings && <div className="pt-3"><label className="agent-welcome-heading mt-1 font-medium leading-tight text-neutral-800">How can I help you today?</label><div className="mt-7 space-y-2">{welcomePrompts.map((item) => { const Icon = item.icon; return <button key={item.label} type="button" className="agent-welcome-prompt flex w-full items-center gap-3 rounded-2xl bg-[#f0f3f9] px-3 py-3 text-left transition-colors hover:bg-[#e6ecf6] disabled:cursor-not-allowed disabled:opacity-50" disabled={!providerConfigured || busy} onClick={() => submitMessage(item.prompt)}><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-neutral-800"><Icon size={18} /></span><span className="min-w-0"><span className="block font-medium text-neutral-800">{item.label}</span><span className="block text-xs text-neutral-500">{item.detail}</span></span></button>; })}</div></div>}
+					{!loadingConversation && messages.length === 0 && settings && <div className="pt-3"><label className="agent-welcome-heading mt-1 font-medium leading-tight text-neutral-800">{emailContext ? "What would you like to do?" : "How can I help you today?"}</label><div className="mt-7 space-y-2">{welcomePrompts.map((item) => { const Icon = item.icon; return <button key={item.label} type="button" className="agent-welcome-prompt flex w-full items-center gap-3 rounded-2xl bg-[#f0f3f9] px-3 py-3 text-left transition-colors hover:bg-[#e6ecf6] disabled:cursor-not-allowed disabled:opacity-50" disabled={!providerConfigured || busy} onClick={() => submitMessage(item.prompt)}><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-neutral-800"><Icon size={18} /></span><span className="min-w-0"><span className="block font-medium text-neutral-800">{item.label}</span><span className="block text-xs text-neutral-500">{item.detail}</span></span></button>; })}</div></div>}
 					{groupAgentMessages(messages).map((turn) => <AgentTurnView key={turn.id} turn={turn} draftActions={draftActions} onOpenDraft={openDraftComposer} onApproveDraft={(draftId, revision) => void startDraftReview(draftId, revision)} onApproveAction={(item) => void confirmAction(item)} approvingId={approvingId} />)}
 					{jobs.filter((job) => job.status === "completed" && job.draftId).slice(0, 5).map((job) => <div key={job.id} className="rounded-2xl border border-neutral-200 bg-white p-3"><p>Auto-draft ready</p><div className="mt-2 flex gap-3 text-blue-700"><button type="button" onClick={() => openDraftComposer(job.draftId!)}>Open draft</button><button type="button" disabled={busy} onClick={() => submitMessage(`Read the thread containing email ${job.sourceMessageId} and draft another reply. Preserve the existing draft.`)}>Regenerate</button><button type="button" className="text-red-600" onClick={() => void discardJobDraft(job.draftId!)}>Discard</button></div></div>)}
 				</div>
@@ -378,22 +407,10 @@ export function AgentPanel({ open, fullSize, onClose, onToggleFullSize }: AgentP
 		{view === "settings" && <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 text-sm">
 			{!canManage && <p>Mailbox management permission is required to change these settings.</p>}
 			{settings && <>
-				<p className="text-sm text-neutral-500">Automations run only for this mailbox when enabled. Drafts require review before sending.</p>
-				<label className="flex items-center justify-between gap-3"><span>Automatically read and summarize new mail</span><Switch checked={settings.autoAnalyzeEnabled ?? false} disabled={!canManage} onCheckedChange={(checked) => setSettings({ ...settings, autoAnalyzeEnabled: checked })} /></label>
-				<label className="flex items-center justify-between gap-3"><span>Automatically categorize new mail</span><Switch checked={settings.autoClassifyEnabled ?? false} disabled={!canManage} onCheckedChange={(checked) => setSettings({ ...settings, autoClassifyEnabled: checked })} /></label>
-				<label className="flex items-center justify-between gap-3"><span>Mark processed emails as read</span><Switch checked={settings.autoMarkReadEnabled ?? false} disabled={!canManage} onCheckedChange={(checked) => setSettings({ ...settings, autoMarkReadEnabled: checked })} /></label>
-				<label className="flex items-center justify-between gap-3"><span>Automations: read shared company context</span><Switch checked={settings.autoHindsightReadEnabled ?? false} disabled={!canManage || !hindsightConnected} onCheckedChange={(checked) => setSettings({ ...settings, autoHindsightReadEnabled: checked })} /></label>
-				<label className="flex items-center justify-between gap-3"><span>Automations: share summaries with company brain</span><Switch checked={settings.autoHindsightWriteEnabled ?? false} disabled={!canManage || !hindsightConnected} onCheckedChange={(checked) => setSettings({ ...settings, autoHindsightWriteEnabled: checked })} /></label>
-				<label className="block">Draft reviewer<select className="mt-2 w-full rounded-xl border border-neutral-200 bg-white p-2 outline-none focus:border-blue-400" value={settings.reviewerUserId ?? ""} disabled={!canManage} onChange={(event) => setSettings({ ...settings, reviewerUserId: event.target.value })}>{reviewers.map((reviewer) => <option key={reviewer.id} value={reviewer.id}>{reviewer.name} ({reviewer.email})</option>)}</select></label>
-				<label className="block">Model<select className="mt-2 w-full rounded-xl border border-neutral-200 bg-white p-2 outline-none focus:border-blue-400" value={settings.modelId ?? ""} disabled={!canManage || !availableModels.length} onChange={(event) => setSettings({ ...settings, modelId: event.target.value })}>{!availableModels.length && <option value="">No models configured</option>}{availableModels.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
-				<div className="flex items-center justify-between gap-3"><span>Automatically draft replies</span><Switch checked={settings.autoDraftEnabled} disabled={!canManage || autoReplyEnabled} onCheckedChange={(checked) => setSettings({ ...settings, autoDraftEnabled: checked })} aria-label="Automatically draft replies" /></div>
-				{autoReplyEnabled && <p className="text-amber-700">Disable out-of-office auto-replies to enable AI drafts.</p>}
-				<label className="block">Writing instructions<textarea className="mt-2 min-h-32 w-full rounded-xl border border-neutral-200 p-2 outline-none focus:border-blue-400" value={settings.instructions} disabled={!canManage} onChange={(event) => setSettings({ ...settings, instructions: event.target.value })} /></label>
-				<label className="block">Daily automation limit<input className="mt-2 w-full rounded-xl border border-neutral-200 p-2 outline-none focus:border-blue-400" type="number" min="1" max="100" value={settings.dailyLimit} disabled={!canManage} onChange={(event) => setSettings({ ...settings, dailyLimit: Number(event.target.value) })} /></label>
-				<Button type="button" size="sm" disabled={!canManage || busy} onClick={() => void saveSettings()}>Save settings</Button>
+				<AutomationSetup settings={settings} onChange={setSettings} onSave={saveSettings} canManage={canManage} hindsightConnected={hindsightConnected} autoReplyEnabled={autoReplyEnabled} busy={busy} reviewers={reviewers} models={availableModels} />
 			</>}
 			<p className="text-xs text-neutral-500">Selected email and thread content is sent to the configured AI provider when you use chat or auto-drafts. Drafts always need your confirmation before sending.</p>
-			{jobs.filter((job) => job.status === "failed" || job.status === "skipped").slice(0, 5).map((job) => <p key={job.id} className="text-xs">{job.status}: {job.reason}{job.status === "failed" && <button type="button" className="ml-2 text-blue-700 underline" onClick={() => void retryJob(job.id)}>Retry</button>}</p>)}
+			<h3 className="font-medium">Recent runs</h3>{jobs.length === 0 && <p className="text-xs text-neutral-500">No runs yet. Enabled automations start with the next incoming email.</p>}{jobs.slice(0, 5).map((job) => <p key={job.id} className="rounded-xl bg-neutral-50 p-3 text-xs">{job.status}{job.reason ? `: ${job.reason}` : ""}{job.draftId && <button type="button" className="ml-2 text-blue-700 underline" onClick={() => openDraftComposer(job.draftId!)}>Review draft</button>}{job.status === "failed" && <button type="button" className="ml-2 text-blue-700 underline" onClick={() => void retryJob(job.id)}>Retry</button>}</p>)}
 		</div>}
 		{draftReview && <SendReview approvalId={draftReview.approvalId} snapshot={draftReview.snapshot} onClose={() => setDraftReview(null)} onSent={() => { setMessages((current) => markAgentDraftSent(current, draftReview.draftId)); setDraftReview(null); void refresh(); }} />}
 	</section>;

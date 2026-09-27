@@ -25,3 +25,7 @@ All automatic reading, categorization, drafting and memory reads/writes are off 
 Apply 0044_zimo_email_assistant.sql before deploying. Existing messages are not backfilled. Automations apply to new eligible inbox mail and retain the existing per-mailbox daily cap, retries and queue leases. Automatic replies are not drafted for list/automated senders. Message summaries and category labels are stored with messages and included in database backups.
 
 Verify with node --test tests/email-analysis.test.mjs tests/hindsight.test.mjs tests/team-fork.test.mjs tests/backup-schema-coverage.test.mjs.
+
+### Simplified assistant flow
+
+The email sparkle button attaches the selected email to a fresh side-panel chat. Suggested tasks and freeform questions use server-authorized email context; attaching alone does not call the LLM or write memory. Shared-memory read and write options remain independent and off by default. Automation setup follows Task → Memory → Review, with a new-email trigger and recent run history. This uses existing UI dependencies and the existing mailbox job queue.

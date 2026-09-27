@@ -35,7 +35,7 @@ export function MessageListRowActions({ message, onAction }: MessageListRowActio
 	return (
 		<>
 			<div className="pointer-events-none absolute right-6 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1 pl-3 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 bg-[#f2f6fc]">
-				<EmailAgentAction emailId={message.id} />
+				<EmailAgentAction emailId={message.id} subject={message.subject} />
 				<Tooltip label="Archive">
 					<Button type="button" variant="ghost" size="sm" onClick={() => void onAction("archive")} aria-label="Archive">
 						<Archive className="h-4 w-4" />

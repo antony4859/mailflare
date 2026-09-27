@@ -17,8 +17,8 @@ export type AgentTurnProps = { turn: AgentTurn; draftActions: AgentDraftAction[]
 
 export type AgentSettings = { autoAnalyzeEnabled: boolean; autoClassifyEnabled: boolean; autoMarkReadEnabled: boolean; autoHindsightReadEnabled: boolean; autoHindsightWriteEnabled: boolean;  mailboxId: string; enabled: boolean; modelId: string | null; autoDraftEnabled: boolean; reviewerUserId: string | null; instructions: string; dailyLimit: number };
 
-export type AgentPanelProps = { open: boolean; fullSize: boolean; onClose: () => void; onToggleFullSize: () => void };
-export type QueuedAgentMessage = { id: string; text: string };
+export type AgentPanelProps = { attachedEmail: import("./email-context").AttachedEmail | null; onDetachEmail: () => void; open: boolean; fullSize: boolean; onClose: () => void; onToggleFullSize: () => void };
+export type QueuedAgentMessage = { id: string; text: string; emailId?: string | null };
 export type QueuedAgentMessagesProps = { messages: QueuedAgentMessage[]; running: boolean; onRemove: (id: string) => void; onEdit: (id: string, text: string) => void; onSteer: (id: string) => void };
 
 export type AgentPanelView = "chat" | "settings";

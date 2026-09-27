@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { HelpCircle, Sparkles } from "lucide-react";
@@ -11,6 +11,7 @@ import { MailSearchInput } from "@/components/mail-search/mail-search-input";
 import { MailSearchProvider } from "@/components/mail-search/mail-search-context";
 import { MailboxProvider } from "@/components/mailbox-provider";
 import { MailboxSelector } from "@/components/mailbox-selector";
+import { ATTACH_EMAIL_EVENT, type AttachedEmail } from "@/components/agent/email-context";
 import { AgentPanel } from "@/components/agent/agent-panel";
 import { AssistantOpenContext } from "@/components/agent/assistant-open-state";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,16 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { assistantOpen, setAssistantOpen, assistantFullSize, setAssistantFullSize } = useDashboardState();
+  const [attachedEmail, setAttachedEmail] = useState<AttachedEmail | null>(null);
+  useEffect(() => {
+    const attach = (event: Event) => {
+      setAttachedEmail((event as CustomEvent<AttachedEmail>).detail);
+      setAssistantOpen(true);
+      setAssistantFullSize(false);
+    };
+    window.addEventListener(ATTACH_EMAIL_EVENT, attach);
+    return () => window.removeEventListener(ATTACH_EMAIL_EVENT, attach);
+  }, [setAssistantOpen, setAssistantFullSize]);
   const assistantEnabled = useAssistantAvailability();
   const assistantVisible = assistantEnabled === true && assistantOpen;
   const pathname = usePathname();
@@ -78,7 +89,7 @@ export default function DashboardLayout({
                         </main>
                       </AssistantOpenContext.Provider>
                       <aside className={clsx(assistantFullSize ? "pl-0" : "pl-4", `min-h-0 min-w-0 shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out motion-reduce:transition-none pr-2 pb-2`, assistantVisible ? "" : "opacity-0")} style={{ width: assistantVisible ? assistantFullSize ? "100%" : "min(390px, 100%)" : "0px" }} aria-hidden={!assistantVisible} inert={!assistantVisible}>
-                        {assistantEnabled && <AgentPanel open={assistantVisible} fullSize={assistantFullSize} onToggleFullSize={() => setAssistantFullSize((current) => !current)} onClose={() => { setAssistantOpen(false); setAssistantFullSize(false); }} />}
+                        {assistantEnabled && <AgentPanel attachedEmail={attachedEmail} onDetachEmail={() => setAttachedEmail(null)} open={assistantVisible} fullSize={assistantFullSize} onToggleFullSize={() => setAssistantFullSize((current) => !current)} onClose={() => { setAssistantOpen(false); setAssistantFullSize(false); }} />}
                       </aside>
                     </div>
                   </div>

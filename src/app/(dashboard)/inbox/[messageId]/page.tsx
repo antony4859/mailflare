@@ -180,7 +180,7 @@ export default function MessageDetailPage() {
       {!message.read && <MarkAsRead messageId={message.id} />}
 
       <h1 className={clsx(!isAnyPanelVisible ? "pl-16" : "pl-10", "pr-6 pb-2 pt-4 text-2xl font-medium text-neutral-900")} title={message.subject ?? "(no subject)"}>
-        {message.subject ?? "(no subject)"}<EmailAgentAction emailId={message.id} />
+        {message.subject ?? "(no subject)"}<EmailAgentAction emailId={message.id} subject={message.subject} />
       </h1>
       {message.aiSummary && <aside className="mx-6 my-2 rounded-xl bg-blue-50 p-3 text-sm"><strong>AI summary{message.aiCategory ? ` · ${message.aiCategory.replaceAll("_", " ")}` : ""}</strong><p className="mt-1 whitespace-pre-wrap">{message.aiSummary}</p></aside>}
       <div className="px-6">
