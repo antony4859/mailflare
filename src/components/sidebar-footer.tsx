@@ -27,6 +27,7 @@ export function SidebarFooter() {
           </kbd>
         </button>
       )}
+      <a href="/source/mailflare-zimo.tar.gz" className="px-1 text-[11px] text-neutral-500 hover:underline">Zimo edition · Source code</a>
       <p className="px-1 text-[11px] text-neutral-400">
         Powered by{" "}
         <a

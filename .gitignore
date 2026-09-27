@@ -62,3 +62,5 @@ mailflare-landing
 
 .agents
 skills-lock.json
+
+/public/source/mailflare-zimo.tar.gz

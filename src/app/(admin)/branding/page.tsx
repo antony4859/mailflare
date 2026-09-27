@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ExternalLink, ImagePlus, LockKeyhole, Palette } from "lucide-react";
+import { useRef, useState } from "react";
+import { ImagePlus, Palette } from "lucide-react";
 import { useBranding } from "@/components/branding-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,37 +11,15 @@ import { BRANDING_ICON_ACCEPT, saveBranding } from "./utils";
 
 export default function BrandingPage() {
 	const branding = useBranding();
-	const [appName, setAppName] = useState(branding.appName);
+	const [editedAppName, setAppName] = useState<string | null>(null);
+	const appName = editedAppName ?? branding.appName;
 	const [icon, setIcon] = useState<File | null>(null);
 	const [preview, setPreview] = useState<string | null>(null);
 	const [status, setStatus] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
 	const inputRef = useRef<HTMLInputElement>(null);
 
-	useEffect(() => {
-		setAppName(branding.appName);
-	}, [branding.appName]);
 
-	if (!branding.canCustomizeBranding) {
-		return (
-			<div className="space-y-6">
-				<div>
-					<h1 className="text-3xl font-medium text-neutral-900">Branding</h1>
-					<p className="mt-2 text-sm text-neutral-500">Custom branding is available with a Pro or Team license.</p>
-				</div>
-				<Card className="rounded-3xl border-0 bg-white p-6">
-					<CardHeader className="py-0">
-						<CardTitle className="flex items-center gap-2"><LockKeyhole className="h-5 w-5" />License required</CardTitle>
-						<CardDescription>This installation continues to use the original Mailflare name, app icon, and favicon.</CardDescription>
-					</CardHeader>
-					<CardContent className="flex flex-col gap-3 pt-6 sm:flex-row">
-						<Button asChild><a href="https://app.paymug.co/buy/mailflare-pro" target="_blank" rel="noopener noreferrer">Buy Pro · $29 <ExternalLink className="h-4 w-4" /></a></Button>
-						<Button asChild variant="outline"><a href="https://app.paymug.co/buy/mailflare-team" target="_blank" rel="noopener noreferrer">Buy Team · from $249 <ExternalLink className="h-4 w-4" /></a></Button>
-					</CardContent>
-				</Card>
-			</div>
-		);
-	}
 
 	function pickIcon(file: File | null) {
 		setIcon(file);
