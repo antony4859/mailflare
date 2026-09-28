@@ -68,8 +68,10 @@ export async function completePasswordReset(
 		.limit(1);
 	if (!row) return { ok: false, error: "This reset link is invalid or has expired. Request a new one." };
 
-	await db.update(users).set({ passwordHash: hashPassword(newPassword) }).where(eq(users.id, row.userId));
-	await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.id, row.id));
+	const passwordHash = hashPassword(newPassword);
+	const [claimed] = await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(and(eq(passwordResetTokens.id, row.id), isNull(passwordResetTokens.usedAt), gt(passwordResetTokens.expiresAt, new Date()))).returning({ id: passwordResetTokens.id });
+	if (!claimed) return { ok: false, error: "This reset link is invalid or has expired. Request a new one." };
+	await db.update(users).set({ passwordHash }).where(eq(users.id, row.userId));
 	await deleteUserSessions(env, row.userId);
 	await createAuditLog(env, {
 		actorUserId: row.userId,

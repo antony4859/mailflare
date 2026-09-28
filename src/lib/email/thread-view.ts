@@ -1,18 +1,11 @@
-import { and, asc, eq, inArray, notInArray } from "drizzle-orm";
+import { and, asc, eq, inArray, notInArray, or } from "drizzle-orm";
 import { getDb } from "@/db";
-import { messageAttachments, messages } from "@/db/schema";
+import { agentDraftMetadata, messageAttachments, messages } from "@/db/schema";
 import { getContactAvatarMap, getContactDisplayNameMap } from "@/lib/contacts/service";
 import { getFirstEmailAddressEntry, normalizeEmailAddress } from "@/lib/email/address";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { SessionUser } from "@/lib/auth/types";
 
-/**
- * The conversation a message belongs to: every stored message in the same
- * mailbox sharing its thread id, oldest first. Drafts and trashed messages are
- * left out, matching what threaded clients show. Bodies come along so the
- * reader can expand any message without another round trip.
- */
-/** The R2 key is an internal pointer and never leaves the server. */
 function withoutRawKey<T extends { rawR2Key: string | null }>(row: T): Omit<T, "rawR2Key"> {
 	const copy: Partial<T> = { ...row };
 	delete copy.rawR2Key;
@@ -45,6 +38,11 @@ export async function getMessageThreadForUser(env: CloudflareEnv, user: SessionU
 				.limit(200)
 		: await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
 
+	const drafts = await db.select({ id: messages.id, subject: messages.subject, snippet: messages.snippet }).from(messages)
+		.leftJoin(agentDraftMetadata, eq(agentDraftMetadata.draftId, messages.id))
+		.where(and(eq(messages.mailboxId, message.mailboxId), eq(messages.userId, user.id), eq(messages.status, "draft"),
+			or(message.threadId ? eq(messages.threadId, message.threadId) : undefined, eq(agentDraftMetadata.sourceMessageId, messageId))))
+		.orderBy(asc(messages.createdAt)).limit(20);
 	const ids = rows.map((row) => row.id);
 	const attachmentRows = ids.length
 		? await db
@@ -79,6 +77,7 @@ export async function getMessageThreadForUser(env: CloudflareEnv, user: SessionU
 	);
 
 	return {
+		drafts,
 		threadId: message.threadId,
 		messages: rows.map((row) => ({
 			...withoutRawKey(row),

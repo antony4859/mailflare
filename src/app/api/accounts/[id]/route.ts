@@ -21,6 +21,7 @@ export async function GET(request: Request, { params }: AccountRouteParams) {
 		account: {
 			id: account.id,
 			email: account.email,
+			resetEmail: account.resetEmail,
 			name: account.name,
 			role: account.role,
 			disabled: account.disabled,

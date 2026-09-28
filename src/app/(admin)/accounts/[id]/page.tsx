@@ -1,5 +1,6 @@
 "use client";
 
+import { TeamInvitation } from "@/components/team-invitation";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Upload } from "lucide-react";
@@ -63,6 +64,7 @@ export default function AccountDetailsPage() {
 				<h1 className="text-3xl font-medium text-neutral-900">Details</h1>
 				<p className="mt-2 text-sm text-neutral-500">Update this account&apos;s profile and status.</p>
 			</div>
+			<TeamInvitation key={account.id} accountId={account.id} recoveryEmail={account.resetEmail} />
 			<section className="space-y-5 rounded-3xl bg-white p-6">
 				<div className="flex items-center gap-4">
 					<span className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-blue-100 text-xl font-semibold text-blue-700">

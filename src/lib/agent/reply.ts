@@ -20,7 +20,7 @@ export async function getReplyRecipients(context: AgentToolContext, source: type
 	const access = await getMailboxAccessLevel(getDb(context.env), context.user, context.mailboxId);
 	if (!access) throw new Error("Mailbox not found");
 	const ownAddresses = new Set(await getMailboxDomainAddresses(getDb(context.env), access.mailbox));
-	if (ownAddresses.has(recipient)) throw new Error("Cannot draft a reply to this mailbox");
+	if (context.origin === "auto" && ownAddresses.has(recipient)) throw new Error("Cannot draft a reply to this mailbox");
 	const cc = replyAll ? [...new Set([...getEmailAddressList(source.toAddr), ...getEmailAddressList(source.ccAddr)])].filter((address) => !ownAddresses.has(address) && address !== recipient).join(", ") : "";
 	return { to: recipient, cc };
 }

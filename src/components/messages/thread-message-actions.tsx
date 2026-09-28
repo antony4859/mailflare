@@ -1,6 +1,7 @@
 "use client";
 
-import { createElement, useEffect, useState } from "react";
+import { createElement, useEffect, useRef, useState } from "react";
+import { EmailAgentAction } from "@/components/agent/email-agent-action";
 import { Ban, FileCode2, Forward, Mail, MailOpen, MoreVertical, Reply, ReplyAll, Star } from "lucide-react";
 import { useCompose } from "@/components/compose/compose-context";
 import { MessageSourceDialog } from "@/components/messages/message-source-dialog";
@@ -31,6 +32,7 @@ export function ThreadMessageActions({
 	const { openDraftComposer } = useCompose();
 	const [starred, setStarred] = useState(message.starred);
 	const [moreOpen, setMoreOpen] = useState(false);
+	const moreRef = useRef<HTMLDivElement | null>(null);
 	const [sourceOpen, setSourceOpen] = useState(false);
 	const [pending, setPending] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -45,11 +47,30 @@ export function ThreadMessageActions({
 		if (starOnly) setMoreOpen(false);
 	}, [starOnly]);
 
+	useEffect(() => {
+		if (!moreOpen) return;
+		const outside = (event: PointerEvent) => {
+			if (event.target instanceof Node && !moreRef.current?.contains(event.target)) setMoreOpen(false);
+		};
+		const escape = (event: KeyboardEvent) => {
+			if (event.key === "Escape") {
+				setMoreOpen(false);
+				moreRef.current?.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')?.focus();
+			}
+		};
+		document.addEventListener("pointerdown", outside, true);
+		document.addEventListener("keydown", escape);
+		return () => {
+			document.removeEventListener("pointerdown", outside, true);
+			document.removeEventListener("keydown", escape);
+		};
+	}, [moreOpen]);
+
 	async function onToggleStar() {
 		setPending(true);
 		setError(null);
 		try {
-			setStarred(await toggleMessageStar(message.id));
+			setStarred((await toggleMessageStar(message.id)).starred);
 		} catch (nextError) {
 			setError(nextError instanceof Error ? nextError.message : "Unable to update star");
 		} finally {
@@ -161,7 +182,8 @@ export function ThreadMessageActions({
 					<Reply className="h-4 w-4" />
 				</Button>
 			</Tooltip>
-			<div className="relative">
+			<EmailAgentAction emailId={message.id} subject={message.subject} />
+			<div className="relative" ref={moreRef}>
 				<Tooltip label="More actions">
 					<Button
 						type="button"

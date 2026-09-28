@@ -1,4 +1,5 @@
 export type ManagedAccount = {
+	resetEmail?: string | null;
 	id: string;
 	email: string;
 	name: string;

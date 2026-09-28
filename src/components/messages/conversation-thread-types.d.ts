@@ -1,4 +1,4 @@
-import type { ThreadMessage } from "@/hooks/types";
+import type { ThreadMessage, ThreadDraft } from "@/hooks/types";
 
 export type ConversationThreadProps = {
 	/** The message the reader is currently viewing; it is rendered by the page, not here. */
@@ -25,6 +25,7 @@ export type ConversationMessageCardProps = {
 };
 
 export type UseMessageThreadResult = {
+	drafts: ThreadDraft[];
 	messages: ThreadMessage[];
 	loading: boolean;
 };

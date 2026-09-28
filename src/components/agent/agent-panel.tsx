@@ -271,6 +271,7 @@ export function AgentPanel({ attachedEmail, onDetachEmail, open, fullSize, onClo
 				if (event.type === "reasoning") setMessages((current) => appendAgentReasoning(current, assistantMessageId, event.text));
 				if (event.type === "reclassify") setMessages((current) => appendAgentReasoning(current, assistantMessageId, event.text, true));
 				if (event.type === "tool") {
+					if (event.state === "complete" && (event.name === "draft_reply" || event.name === "draft_email")) window.dispatchEvent(new Event("mailflare:messages-changed"));
 					const toolId = `${assistantMessageId}:tool:${event.id}`;
 					const content = event.state === "running" ? "" : typeof event.result === "string" ? event.result : JSON.stringify(event.result) ?? "";
 					const toolState = event.state === "running" ? "running" : event.state === "failed" ? "failed" : "used";

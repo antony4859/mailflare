@@ -60,7 +60,10 @@ export type ThreadMessage = Message & {
 	}>;
 };
 
+export type ThreadDraft = { id: string; subject: string | null; snippet: string | null };
+
 export type ThreadResponse = {
+	drafts?: ThreadDraft[];
 	threadId: string | null;
 	messages?: ThreadMessage[];
 	error?: string;

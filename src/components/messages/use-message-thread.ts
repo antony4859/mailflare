@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { authFetch } from "@/lib/auth/client";
-import type { ThreadMessage, ThreadResponse } from "@/hooks/types";
+import type { ThreadMessage, ThreadResponse, ThreadDraft } from "@/hooks/types";
 import type { UseMessageThreadResult } from "./conversation-thread-types";
 
 /** Loads every message in the conversation of `messageId`; refetches when mail changes. */
 export function useMessageThread(messageId: string, threadId: string | null | undefined): UseMessageThreadResult {
+	const [drafts, setDrafts] = useState<ThreadDraft[]>([]);
+	const [loadedMessageId, setLoadedMessageId] = useState<string | null>(null);
 	const [messages, setMessages] = useState<ThreadMessage[]>([]);
 	const [loading, setLoading] = useState(false);
 
 	useEffect(() => {
-		if (!threadId) return;
 		let cancelled = false;
 		let refreshTimer: number | null = null;
 		async function load() {
@@ -17,9 +18,9 @@ export function useMessageThread(messageId: string, threadId: string | null | un
 			try {
 				const response = await authFetch(`/api/messages/${messageId}/thread`);
 				const data = (await response.json()) as ThreadResponse;
-				if (!cancelled) setMessages(response.ok ? data.messages ?? [] : []);
+				if (!cancelled) { setMessages(response.ok ? data.messages ?? [] : []); setDrafts(response.ok ? data.drafts ?? [] : []); setLoadedMessageId(messageId); }
 			} catch {
-				if (!cancelled) setMessages([]);
+				if (!cancelled) { setMessages([]); setDrafts([]); }
 			} finally {
 				if (!cancelled) setLoading(false);
 			}
@@ -41,5 +42,5 @@ export function useMessageThread(messageId: string, threadId: string | null | un
 		};
 	}, [messageId, threadId]);
 
-	return { messages: threadId ? messages : [], loading };
+	return { messages: loadedMessageId === messageId && threadId ? messages : [], drafts: loadedMessageId === messageId ? drafts : [], loading };
 }

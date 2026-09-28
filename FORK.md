@@ -29,3 +29,9 @@ Verify with node --test tests/email-analysis.test.mjs tests/hindsight.test.mjs t
 ### Simplified assistant flow
 
 The email sparkle button attaches the selected email to a fresh side-panel chat. Suggested tasks and freeform questions use server-authorized email context; attaching alone does not call the LLM or write memory. Shared-memory read and write options remain independent and off by default. Automation setup follows Task → Memory → Review, with a new-email trigger and recent run history. This uses existing UI dependencies and the existing mailbox job queue.
+
+### Team invitations and reply drafts
+
+Administrators can email managed accounts a one-use password setup link valid for 48 hours. Only hashed tokens are stored; retries revoke prior setup links and failed sends revoke their token. Teammates set their own password and retain private mailboxes. Invitation controls are on account details.
+
+Message action menus dismiss on outside click or Escape, and the agent action appears beside Reply. Manually requested self-replies preserve threading; automatic self-replies remain blocked. The conversation displays only the signed-in user's own reply drafts, including for delegated mailboxes.

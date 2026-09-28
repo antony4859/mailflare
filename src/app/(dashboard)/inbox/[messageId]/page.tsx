@@ -1,5 +1,6 @@
 "use client";
 
+import { useCompose } from "@/components/compose/compose-context";
 import { EmailAgentAction } from "@/components/agent/email-agent-action";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
@@ -45,6 +46,7 @@ import { useAssistantOpen } from "@/components/agent/assistant-open-state";
 export default function MessageDetailPage() {
   const params = useParams<{ messageId: string }>();
   const pathname = usePathname();
+  const { openDraftComposer } = useCompose();
   const { selectedMailbox, mailboxes } = useSelectedMailbox();
   const messageId = params.messageId;
   const [data, setData] = useState<MessageDetailResponse | null>(null);
@@ -347,6 +349,7 @@ export default function MessageDetailPage() {
         expandedAll={threadExpanded}
         onExpandedAllChange={setThreadExpanded}
       />
+      {thread.drafts.length > 0 && <section aria-label="Reply drafts" className="mx-6 mb-5 space-y-2">{thread.drafts.map(draft => <button key={draft.id} type="button" className="block w-full rounded-xl border border-amber-200 bg-amber-50 p-4 text-left" onClick={() => openDraftComposer(draft.id)}><span className="text-xs font-semibold text-amber-800">DRAFT · Review reply</span><span className="mt-1 block font-medium">{draft.subject || "Untitled reply"}</span><span className="mt-1 block truncate text-sm text-neutral-600">{draft.snippet}</span></button>)}</section>}
       <MessageAttachmentViewer
         attachment={previewAttachment}
         messageId={message.id}
