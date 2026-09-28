@@ -1,5 +1,7 @@
 "use client";
 
+import { requestInlineReply } from "@/components/compose/inline-reply";
+
 import { createElement, useEffect, useRef, useState } from "react";
 import { EmailAgentAction } from "@/components/agent/email-agent-action";
 import { Ban, FileCode2, Forward, Mail, MailOpen, MoreVertical, Reply, ReplyAll, Star } from "lucide-react";
@@ -80,6 +82,7 @@ export function ThreadMessageActions({
 
 	async function onReply(mode: ReplyMode) {
 		setMoreOpen(false);
+		if (mode === "reply" && requestInlineReply("", message.id)) return;
 		setPending(true);
 		setError(null);
 		try {
@@ -94,7 +97,7 @@ export function ThreadMessageActions({
 				recipients: getReplyRecipients(message, ownAddresses, mode),
 				threading: getReplyThreading(message),
 			});
-			openDraftComposer(draftId);
+			if (!requestInlineReply(draftId, message.id)) openDraftComposer(draftId);
 		} catch (nextError) {
 			setError(nextError instanceof Error ? nextError.message : "Could not start reply");
 		} finally {

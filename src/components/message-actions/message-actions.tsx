@@ -1,5 +1,7 @@
 "use client";
 
+import { requestInlineReply } from "@/components/compose/inline-reply";
+
 import { createElement, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Archive, Ban, BellOff, FileCode2, Forward, Mail, MailOpen, MoreVertical, Reply, ReplyAll, ShieldAlert, Trash2 } from "lucide-react";
@@ -79,6 +81,7 @@ export function MessageActions({
 	const canReplyAll = hasAdditionalRecipients(replyable, ownAddresses);
 
 	const handleReply = useCallback(async (mode: ReplyMode) => {
+		if (mode === "reply" && requestInlineReply("", messageId)) return;
 		setPendingAction(mode);
 		setError(null);
 		try {
@@ -93,13 +96,13 @@ export function MessageActions({
 				recipients: getReplyRecipients(replyable, ownAddresses, mode),
 				threading: getReplyThreading(replyable),
 			});
-			openDraftComposer(draftId);
+			if (!requestInlineReply(draftId, messageId)) openDraftComposer(draftId);
 		} catch (replyError) {
 			setError(replyError instanceof Error ? replyError.message : "Could not start reply");
 		} finally {
 			setPendingAction(null);
 		}
-	}, [mailboxId, senderAddress, ownAddress, subject, bodyText, bodyHtml, messageMeta?.createdAt, replyable, ownAddresses, openDraftComposer]);
+	}, [messageId, mailboxId, senderAddress, ownAddress, subject, bodyText, bodyHtml, messageMeta?.createdAt, replyable, ownAddresses, openDraftComposer]);
 
 	const shortcuts = useMemo(
 		() => [

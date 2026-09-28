@@ -27,7 +27,7 @@ export async function GET(request: Request, { params }: DraftRouteParams) {
 
 	const attachments = await listMessageAttachments(env, id);
 	const [agent] = await db.select().from(agentDraftMetadata).where(eq(agentDraftMetadata.draftId, id)).limit(1);
-	return NextResponse.json({ draft: { ...draft, attachments, agent: agent ? { revision: agent.revision, origin: agent.origin, scheduledAt: agent.scheduledAt?.toISOString() ?? null } : null } });
+	return NextResponse.json({ draft: { ...draft, attachments, agent: agent ? { sourceMessageId: agent.sourceMessageId, revision: agent.revision, origin: agent.origin, scheduledAt: agent.scheduledAt?.toISOString() ?? null } : null } });
 }
 
 export async function PATCH(request: Request, { params }: DraftRouteParams) {

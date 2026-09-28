@@ -35,3 +35,7 @@ The email sparkle button attaches the selected email to a fresh side-panel chat.
 Administrators can email managed accounts a one-use password setup link valid for 48 hours. Only hashed tokens are stored; retries revoke prior setup links and failed sends revoke their token. Teammates set their own password and retain private mailboxes. Invitation controls are on account details.
 
 Message action menus dismiss on outside click or Escape, and the agent action appears beside Reply. Manually requested self-replies preserve threading; automatic self-replies remain blocked. The conversation displays only the signed-in user's own reply drafts, including for delegated mailboxes.
+
+### Inline replies
+
+Reply drafts open in an inline editor beneath the conversation, with a compact recipient row, autosave status, collapsible details and existing send/review controls. Reply resumes an existing thread draft before creating another. Collapsing preserves the mounted editor; pending saves are flushed when leaving the inline editor. The existing thread, authorization and AI-send approval paths remain in use. Meru/Gmail provided interaction inspiration; no Meru code or dependencies were imported.

@@ -36,13 +36,17 @@ export function ComposeForm({
 	mode = "page",
 	draftIdToLoad,
 	onClose,
+	onCollapse,
 }: {
-	mode?: "page" | "popup";
+	mode?: "page" | "popup" | "inline";
 	draftIdToLoad?: string | null;
 	onClose?: () => void;
+	onCollapse?: () => void;
 }) {
 	const router = useRouter();
 	const { selectedMailbox, setSelectedMailbox, mailboxes } = useSelectedMailbox();
+	const [showReplyDetails, setShowReplyDetails] = useState(false);
+	const [saveState, setSaveState] = useState<"saving" | "saved" | "error">("saved");
 	const [draftId, setDraftId] = useState<string | null>(null);
 	const [agentRevision, setAgentRevision] = useState<number | null>(null);
 	const [agentReview, setAgentReview] = useState<{ approvalId: string; snapshot: ReviewSnapshot } | null>(null);
@@ -70,6 +74,7 @@ export function ComposeForm({
 	const [loadedDraftFrom, setLoadedDraftFrom] = useState<string | null>(null);
 	const [selectedFrom, setSelectedFrom] = useState("");
 	const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const pendingSave = useRef<(() => Promise<void>) | null>(null);
 	const draftGeneration = useRef(0);
 	const attachmentInput = useRef<HTMLInputElement | null>(null);
 	const fileDragDepth = useRef(0);
@@ -191,7 +196,10 @@ export function ComposeForm({
 		if (saveTimer.current) clearTimeout(saveTimer.current);
 
 		const generation = draftGeneration.current;
-		saveTimer.current = setTimeout(async () => {
+		setSaveState("saving");
+		const save = async () => {
+			pendingSave.current = null;
+			try {
 			const payload = {
 				mailboxId: selectedMailbox?.id,
 				from: fromAddr,
@@ -217,13 +225,19 @@ export function ComposeForm({
 					return;
 				}
 				setDraftId(data.draft.id);
-			}
-		}, 900);
+				setSaveState("saved");
+			} else { setSaveState("error"); }
+			} catch { setSaveState("error"); }
+		};
+		pendingSave.current = save;
+		saveTimer.current = setTimeout(save, 900);
 
 		return () => {
 			if (saveTimer.current) clearTimeout(saveTimer.current);
 		};
 	}, [bcc, cc, draftId, fromAddr, html, loadingDraft, quotedHtml, selectedMailbox?.id, selectedMailbox?.signature, subject, threading, to]);
+
+	useEffect(() => () => { if (mode === "inline") void pendingSave.current?.(); }, [mode]);
 
 	async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
@@ -240,6 +254,7 @@ export function ComposeForm({
 			setToast({ type: "error", message: "Write a message before sending" });
 			return;
 		}
+		pendingSave.current = null;
 		setLoading(true);
 		const fullHtml = joinQuotedHtml(html, quotedHtml);
 		if (draftId && agentRevision !== null) {
@@ -311,10 +326,12 @@ export function ComposeForm({
 		setAttachments([]);
 		setScheduledAt(null);
 		setToast({ type: "success", message: data.scheduled ? "Message scheduled" : "Message sent" });
+		if (mode === "inline") onClose?.();
 		window.dispatchEvent(new Event("mailflare:messages-changed"));
 	}
 
 	async function deleteDraftAndClose() {
+		pendingSave.current = null;
 		if (saveTimer.current) clearTimeout(saveTimer.current);
 		draftGeneration.current += 1;
 		setDeletingDraft(true);
@@ -474,7 +491,9 @@ export function ComposeForm({
 	);
 
 	const frameClass =
-		mode === "popup"
+		mode === "inline"
+			? "relative flex min-h-[340px] w-full flex-col overflow-hidden rounded-xl border border-neutral-300 bg-white shadow-sm"
+			: mode === "popup"
 			? modalMode
 				? "fixed left-1/2 top-1/2 z-50 flex h-[86vh] w-[min(860px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg bg-white shadow-2xl"
 				: "fixed bottom-4 right-4 z-40 flex h-[min(520px,calc(100vh-88px))] w-[min(560px,calc(100vw-32px))] flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-2xl"
@@ -494,13 +513,13 @@ export function ComposeForm({
 					{toast.message}
 				</div>
 			)}
-			<form onSubmit={onSubmit} className={frameClass} role={modalMode ? "dialog" : undefined} aria-modal={modalMode || undefined} aria-label={modalMode ? "Compose message" : undefined} onKeyDown={(event) => { if (modalMode && event.key === "Escape") { event.preventDefault(); setModalMode(false); } }} onDragEnterCapture={onFileDragEnter} onDragOverCapture={onFileDragOver} onDragLeaveCapture={onFileDragLeave} onDropCapture={onFileDrop}>
+			<form onSubmit={onSubmit} className={frameClass} role={modalMode ? "dialog" : undefined} aria-modal={modalMode || undefined} aria-label={mode === "inline" ? "Reply editor" : modalMode ? "Compose message" : undefined} onKeyDown={(event) => { if (modalMode && event.key === "Escape") { event.preventDefault(); setModalMode(false); } }} onDragEnterCapture={onFileDragEnter} onDragOverCapture={onFileDragOver} onDragLeaveCapture={onFileDragLeave} onDropCapture={onFileDrop}>
 				{draggingFiles && (
 					<div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center border-2 border-dashed border-blue-400 bg-blue-50/90 text-sm font-medium text-blue-700" aria-hidden="true">
 						Drop files to attach
 					</div>
 				)}
-				<div className="flex h-9 items-center justify-between bg-neutral-800 px-4 text-sm font-medium text-white">
+				<div className={cn("flex h-10 items-center justify-between px-4 text-sm font-medium", mode === "inline" ? "bg-white text-neutral-700" : "bg-neutral-800 text-white")}>
 					<span className="flex items-center gap-2">
 						{threading?.inReplyTo && <Reply className="h-3.5 w-3.5 text-neutral-300" />}
 						{!threading?.inReplyTo && /^fwd?:/i.test(subject) && <Forward className="h-3.5 w-3.5 text-neutral-300" />}
@@ -514,6 +533,7 @@ export function ComposeForm({
 										? "Draft saved"
 										: "New Message"}
 					</span>
+					{mode === "inline" && <div className="flex items-center gap-3 text-xs text-neutral-500"><span role="status">{loadingDraft ? "Loading…" : saveState === "saving" ? "Saving…" : saveState === "error" ? "Not saved — keep this open" : "Saved to Drafts"}</span><button type="button" onClick={() => setShowReplyDetails(!showReplyDetails)} className="hover:text-neutral-900">Details</button><button type="button" onClick={onCollapse} aria-label="Collapse reply" title="Collapse reply" className="rounded p-1 hover:bg-neutral-100"><Minimize2 size={15} /></button></div>}
 					{mode === "popup" && (
 						<div className="flex items-center gap-3 text-neutral-300">
 							<button type="button" onClick={() => setModalMode((current) => !current)} aria-label={modalMode ? "Restore floating composer" : "Open composer as modal"} title={modalMode ? "Restore floating composer" : "Open composer as modal"} className="rounded p-1 hover:bg-neutral-700 hover:text-white">
@@ -525,7 +545,7 @@ export function ComposeForm({
 						</div>
 					)}
 				</div>
-				<div className="border-b border-neutral-100 px-4 py-1 flex flex-row items-center">
+				<div className={cn("border-b border-neutral-100 px-4 py-1 flex flex-row items-center", mode === "inline" && !showReplyDetails && "hidden")}>
 					<Label htmlFor={`${mode}-from`} className="text-sm text-neutral-500">From</Label>
 					<Select
 						id={`${mode}-from`}
@@ -588,7 +608,7 @@ export function ComposeForm({
 						autoFocus={!loadingDraft && bcc.length === 0}
 					/>
 				)}
-				<div className="border-b border-neutral-100 px-4 py-1">
+				<div className={cn("border-b border-neutral-100 px-4 py-1", mode === "inline" && !showReplyDetails && "hidden")}>
 					<Label htmlFor={`${mode}-subject`} className="sr-only">Subject</Label>
 					<Input
 						id={`${mode}-subject`}
@@ -603,6 +623,7 @@ export function ComposeForm({
 				<Label htmlFor={`${mode}-text`} className="sr-only">Body</Label>
 				<RichTextEditor
 					id={`${mode}-text`}
+					className={mode === "inline" ? "[&>div:last-child]:flex-wrap" : undefined}
 					value={html}
 					onChange={setHtml}
 					quotedHtml={quotedHtml}
